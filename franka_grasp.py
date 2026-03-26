@@ -83,8 +83,7 @@ class FrankaGrasp(VecTask):
 
         # Default arm pose: natural pre-grasp position
         self.franka_default_dof_pos = to_torch(
-            [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785, 0.04, 0.04],
-            device=self.device,
+            [0.0, 0.2, 0.0, -1.2, 0.0, 1.5, 0.785, 0.04, 0.04],
         )
 
         # Track successes
@@ -269,33 +268,42 @@ class FrankaGrasp(VecTask):
 
     def compute_reward(self):
         """Shaped reward: reach -> grasp -> lift."""
-        # Extract from observations
-        eef_to_mug = self.obs_buf[:, 18:21]
-        mug_height = self.obs_buf[:, 21]
-        gripper_open = self.obs_buf[:, 22]
+        self.gym.refresh_actor_root_state_tensor(self.sim)
 
-        # 1) Distance reward: get close to the mug
+        # Get current mug position directly (not from obs_buf which may have noise)
+        mug_pos = self.root_state.view(self.num_envs, self.actors_per_env, 13)[:, 2, :3]
+        hand_pos = self.rigid_body_state.view(self.num_envs, -1, 13)[:, self.hand_handle, :3]
+
+        eef_to_mug = mug_pos - hand_pos
         dist = torch.norm(eef_to_mug, dim=-1)
-        dist_reward = self.dist_reward_scale / (1.0 + 5.0 * dist)
+        mug_height = mug_pos[:, 2] - 0.4
+        gripper_open = self.franka_dof_pos[:, 7] + self.franka_dof_pos[:, 8]
 
-        # 2) Grasp reward: close gripper when near mug
+        # 1) Distance reward: steep exponential — really pull toward the mug
+        dist_reward = self.dist_reward_scale * (1.0 / (1.0 + dist))
+
+        # 2) Reaching bonus: extra reward for getting very close
+        close_bonus = torch.where(dist < 0.1, 0.5 * torch.ones_like(dist), torch.zeros_like(dist))
+        very_close_bonus = torch.where(dist < 0.05, 1.0 * torch.ones_like(dist), torch.zeros_like(dist))
+
+        # 3) Grasp reward: close gripper when near mug
         near_mug = (dist < 0.05).float()
         fingers_closing = (gripper_open < 0.06).float()
         grasp_reward = self.grasp_reward_scale * near_mug * fingers_closing
 
-        # 3) Lift reward: raise the mug off the table
+        # 4) Lift reward: raise the mug off the table
         height = mug_height.clamp(min=0.0)
         lift_reward = self.lift_reward_scale * height * near_mug
 
-        # 4) Action penalty: smooth motions
+        # 5) Action penalty
         action_penalty = self.action_penalty_scale * torch.sum(self.actions ** 2, dim=-1)
 
-        # 5) Big bonus for successful lift
+        # 6) Success bonus
         success = ((height > self.lift_height) & (dist < 0.05)).float()
         success_bonus = 10.0 * success
 
         # Total reward
-        self.rew_buf[:] = dist_reward + grasp_reward + lift_reward - action_penalty + success_bonus
+        self.rew_buf[:] = dist_reward + close_bonus + very_close_bonus + grasp_reward + lift_reward - action_penalty + success_bonus
 
         # Reset if episode is done
         self.reset_buf[:] = torch.where(
