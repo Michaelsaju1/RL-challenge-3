@@ -1,0 +1,54 @@
+name: FrankaGrasp
+
+physics_engine: ${..physics_engine}
+
+env:
+  numEnvs: ${resolve_default:1024,${...num_envs}}
+  envSpacing: 1.5
+  episodeLength: 150
+  enableDebugVis: False
+
+  actionScale: 0.5
+
+  # Reward weights
+  distRewardScale: 2.0
+  liftRewardScale: 15.0
+  graspRewardScale: 5.0
+  actionPenaltyScale: 0.01
+  liftHeight: 0.1
+
+  # Domain randomization: "none" | "moderate" | "aggressive"
+  drLevel: "none"
+
+  domainRandomization:
+    objectFriction:
+      moderateScale: 0.2
+      aggressiveScale: 0.5
+    actionNoise:
+      moderateStd: 0.01
+      aggressiveStd: 0.05
+    observationNoise:
+      moderateStd: 0.005
+      aggressiveStd: 0.02
+
+sim:
+  dt: 0.0166
+  substeps: 2
+  up_axis: "z"
+  gravity: [0.0, 0.0, -9.81]
+  use_gpu_pipeline: ${eq:${...pipeline},"gpu"}
+
+  physx:
+    num_threads: ${....num_threads}
+    solver_type: ${....solver_type}
+    use_gpu: ${contains:"cuda",${....sim_device}}
+    num_position_iterations: 8
+    num_velocity_iterations: 1
+    contact_offset: 0.005
+    rest_offset: 0.0
+    bounce_threshold_velocity: 0.2
+    max_depenetration_velocity: 1000.0
+    default_buffer_size_multiplier: 5.0
+    max_gpu_contact_pairs: 1048576
+    num_subscenes: ${....num_subscenes}
+    contact_collection: 0
