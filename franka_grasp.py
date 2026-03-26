@@ -267,11 +267,6 @@ class FrankaGrasp(VecTask):
         self.compute_observations()
         self.compute_reward()
 
-        # Reset finished environments
-        env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
-        if len(env_ids) > 0:
-            self.reset_idx(env_ids)
-
     def compute_reward(self):
         """Shaped reward: reach -> grasp -> lift."""
         # Extract from observations
